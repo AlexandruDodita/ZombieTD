@@ -19,8 +19,9 @@ export class TileMap {
         const mapWidth = this.cols * this.tileSize;
         const mapHeight = this.rows * this.tileSize;
         
-        const offsetX = (canvasWidth - mapWidth) / 2;
-        const offsetY = (canvasHeight - mapHeight) / 2;
+        // Ensure offset is calculated correctly
+        const offsetX = Math.floor((canvasWidth - mapWidth) / 2);
+        const offsetY = Math.floor((canvasHeight - mapHeight) / 2);
         
         // Apply offset for centering
         ctx.save();
@@ -70,6 +71,20 @@ export class TileMap {
         return this.grid[y][x];
     }
     
+    // Check if a rectangle of tiles is free for placement
+    canPlaceDefense(x, y, width, height) {
+        // Check all tiles in the rectangle
+        for (let dy = 0; dy < height; dy++) {
+            for (let dx = 0; dx < width; dx++) {
+                if (this.isTileOccupied(x + dx, y + dy)) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
     // Mark a tile as occupied or free
     setTileOccupied(x, y, isOccupied) {
         // Check bounds
@@ -78,6 +93,15 @@ export class TileMap {
         }
         
         this.grid[y][x] = isOccupied;
+    }
+    
+    // Mark a rectangle of tiles as occupied or free
+    setRectangleOccupied(x, y, width, height, isOccupied) {
+        for (let dy = 0; dy < height; dy++) {
+            for (let dx = 0; dx < width; dx++) {
+                this.setTileOccupied(x + dx, y + dy, isOccupied);
+            }
+        }
     }
     
     // Convert screen coordinates to grid coordinates

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Defense</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="game-ui">
+            <div id="stats">
+                <div class="stat">Wave: <span id="wave-counter">1</span></div>
+                <div class="stat">Gold: <span id="gold-counter">100</span></div>
+                <div class="stat">Base Health: <span id="health-counter">100</span></div>
+            </div>
+            <div id="controls">
+                <button id="start-wave">Start Wave</button>
+                <div id="defense-buttons">
+                    <button id="place-cannon">Cannon Tower (50g)</button>
+                    <button id="place-sniper">Sniper Tower (75g)</button>
+                    <button id="place-wall">Wall (25g)</button>
+                </div>
+                <div id="upgrade-buttons">
+                    <button id="upgrade-tower" disabled>Upgrade Tower</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="game/game.js" type="module"></script>
+</body>
+</html> 

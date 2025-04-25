@@ -12,78 +12,159 @@ export class Spawner {
         this.spawnedEnemies = [];
         this.waveEnded = true; // Set to true to trigger first wave immediately
         
-        // Wave settings
-        this.timeBetweenWaves = 10000; // 10 seconds
-        this.timeBetweenSpawns = 1000; // 1 second
+        // Improved wave settings with slower progression
+        this.calculateWaveSettings();
         
         // UI for wave timer
         this.createWaveTimerUI();
+        
+        // Add window resize event listener
+        window.addEventListener('resize', this.handleResize.bind(this));
+    }
+    
+    calculateWaveSettings() {
+        // Base times between waves (longer early on, shorter later)
+        if (this.waveNumber < 5) {
+            this.timeBetweenWaves = 15000; // 15 seconds for waves 1-5
+        } else if (this.waveNumber < 10) {
+            this.timeBetweenWaves = 12000; // 12 seconds for waves 6-10
+        } else if (this.waveNumber < 15) {
+            this.timeBetweenWaves = 10000; // 10 seconds for waves 11-15
+        } else {
+            this.timeBetweenWaves = 8000; // 8 seconds for waves 16+
+        }
+        
+        // Base times between enemy spawns (slower early on)
+        if (this.waveNumber < 5) {
+            this.timeBetweenSpawns = 1500; // 1.5 seconds for waves 1-5
+        } else if (this.waveNumber < 10) {
+            this.timeBetweenSpawns = 1200; // 1.2 seconds for waves 6-10
+        } else {
+            this.timeBetweenSpawns = 1000; // 1 second for waves 11+
+        }
     }
     
     createWaveTimerUI() {
-        // Create wave timer UI if it doesn't exist
-        if (!document.getElementById('wave-timer-container')) {
-            // Create container
-            const waveTimerContainer = document.createElement('div');
-            waveTimerContainer.id = 'wave-timer-container';
-            waveTimerContainer.style.position = 'absolute';
-            waveTimerContainer.style.top = '10px';
-            waveTimerContainer.style.left = '50%';
-            waveTimerContainer.style.transform = 'translateX(-50%)';
-            waveTimerContainer.style.textAlign = 'center';
-            
-            // Create timer display
-            const waveTimer = document.createElement('div');
-            waveTimer.id = 'wave-timer';
-            waveTimer.style.fontSize = '24px';
-            waveTimer.style.fontWeight = 'bold';
-            waveTimer.style.color = '#fff';
-            waveTimer.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.5)';
-            waveTimer.textContent = 'Next Wave: 10s';
-            
-            // Create skip button
-            const skipButton = document.createElement('button');
-            skipButton.id = 'skip-timer-button';
-            skipButton.textContent = 'Skip Timer';
-            skipButton.style.marginTop = '5px';
-            skipButton.style.padding = '5px 15px';
-            skipButton.style.backgroundColor = '#e74c3c';
-            skipButton.style.color = '#fff';
-            skipButton.style.border = 'none';
-            skipButton.style.borderRadius = '4px';
-            skipButton.style.cursor = 'pointer';
-            
-            // Add hover effect
-            skipButton.addEventListener('mouseover', () => {
-                skipButton.style.backgroundColor = '#c0392b';
-            });
-            skipButton.addEventListener('mouseout', () => {
-                skipButton.style.backgroundColor = '#e74c3c';
-            });
-            
-            // Add click event (actual functionality will be connected in game.js)
-            skipButton.addEventListener('click', () => {
-                if (typeof this.onSkipTimer === 'function') {
-                    this.onSkipTimer();
-                }
-            });
-            
-            // Add elements to container
-            waveTimerContainer.appendChild(waveTimer);
-            waveTimerContainer.appendChild(skipButton);
-            
-            // Add container to document
-            document.body.appendChild(waveTimerContainer);
-            
-            // Initially hide the UI
-            this.hideWaveTimerUI();
+        // Check if the UI already exists
+        const existingContainer = document.getElementById('wave-timer-container');
+        if (existingContainer) {
+            // Container exists, just make sure it has the right styles for bottom-center
+            this.updateWaveTimerUIPosition();
+            return;
         }
+        
+        // Create container for the wave timer
+        const container = document.createElement('div');
+        container.id = 'wave-timer-container';
+        Object.assign(container.style, {
+            position: 'absolute',
+            display: 'none',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '18px',
+            textAlign: 'center',
+            zIndex: '1000',
+            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
+            transition: 'all 0.3s ease-in-out'
+        });
+        
+        // Create wave number text
+        const waveNumberText = document.createElement('div');
+        waveNumberText.id = 'wave-number-text';
+        waveNumberText.style.marginBottom = '5px';
+        waveNumberText.style.fontSize = '20px';
+        waveNumberText.style.fontWeight = 'bold';
+        waveNumberText.textContent = 'Wave 1 Completed!';
+        container.appendChild(waveNumberText);
+        
+        // Create timer element
+        const timerElement = document.createElement('div');
+        timerElement.id = 'wave-timer';
+        timerElement.style.marginBottom = '10px';
+        timerElement.textContent = 'Next Wave: 10s';
+        container.appendChild(timerElement);
+        
+        // Create skip button
+        const skipButton = document.createElement('button');
+        skipButton.id = 'skip-timer-button';
+        Object.assign(skipButton.style, {
+            padding: '5px 15px',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            transition: 'background-color 0.2s'
+        });
+        skipButton.textContent = 'Skip Timer';
+        
+        // Add hover effect
+        skipButton.addEventListener('mouseover', () => {
+            skipButton.style.backgroundColor = '#45a049';
+        });
+        skipButton.addEventListener('mouseout', () => {
+            skipButton.style.backgroundColor = '#4CAF50';
+        });
+        
+        // Add click event
+        skipButton.addEventListener('click', () => {
+            if (this.onSkipTimer) {
+                this.onSkipTimer();
+            }
+        });
+        
+        container.appendChild(skipButton);
+        
+        // Add to document
+        document.body.appendChild(container);
+        
+        // Position at bottom center
+        this.updateWaveTimerUIPosition();
+        
+        // Initially hide the timer
+        this.hideWaveTimerUI();
+    }
+    
+    updateWaveTimerUIPosition() {
+        const container = document.getElementById('wave-timer-container');
+        if (!container) return;
+        
+        // Get canvas dimensions
+        const canvas = document.getElementById('game-canvas');
+        if (!canvas) return;
+        
+        const canvasRect = canvas.getBoundingClientRect();
+        
+        // Position at bottom center of canvas
+        Object.assign(container.style, {
+            left: `${canvasRect.left + (canvasRect.width / 2) - (container.offsetWidth / 2)}px`,
+            bottom: `${window.innerHeight - canvasRect.bottom + 20}px`, // 20px up from bottom
+        });
     }
     
     showWaveTimerUI() {
         const container = document.getElementById('wave-timer-container');
         if (container) {
+            // Update position before showing
+            this.updateWaveTimerUIPosition();
+            
             container.style.display = 'block';
+            container.style.opacity = '1'; // Ensure full opacity
+            
+            // Update wave number text
+            const waveNumberText = document.getElementById('wave-number-text');
+            if (waveNumberText) {
+                waveNumberText.textContent = `Wave ${this.waveNumber} Completed!`;
+                
+                // If wave 1 is about to start, show different text
+                if (this.waveNumber === 0) {
+                    waveNumberText.textContent = 'Prepare for Wave 1!';
+                }
+            }
         }
     }
     
@@ -120,7 +201,12 @@ export class Spawner {
                 if (this.enemiesLeftToSpawn <= 0) {
                     this.isSpawning = false;
                     this.waveEnded = true;
-                    this.waveTimer = this.timeBetweenWaves; // Set timer for next wave
+                    
+                    // Recalculate wave settings for next wave's timing
+                    this.calculateWaveSettings();
+                    
+                    // Set timer for next wave
+                    this.waveTimer = this.timeBetweenWaves;
                 }
             }
         } else {
@@ -139,6 +225,11 @@ export class Spawner {
                 if (this.waveTimer <= 0) {
                     this.startWave();
                     this.waveEnded = false;
+                    
+                    // Play wave start sound if game reference exists
+                    if (this.game && this.game.audio) {
+                        this.game.audio.playSound('waveStart');
+                    }
                 }
             }
         }
@@ -157,14 +248,23 @@ export class Spawner {
         this.waveNumber++;
         
         // Calculate number of enemies based on wave
-        this.enemiesLeftToSpawn = Math.min(5 + Math.floor(this.waveNumber * 1.5), 30);
+        // More controlled progression with slightly fewer enemies early on
+        this.enemiesLeftToSpawn = Math.min(3 + Math.floor(this.waveNumber * 1.2), 30);
         
         console.log(`Starting wave ${this.waveNumber} with ${this.enemiesLeftToSpawn} enemies`);
+        
+        // Recalculate wave settings for spawn timing
+        this.calculateWaveSettings();
     }
     
     skipTimer() {
         if (!this.isSpawning && this.waveEnded) {
             this.waveTimer = 0;
+            
+            // Play wave start sound if game reference exists
+            if (this.game && this.game.audio) {
+                this.game.audio.playSound('waveStart');
+            }
         }
     }
     
@@ -242,7 +342,16 @@ export class Spawner {
         this.waveNumber = 0; // Start at 0 so first wave will be 1
         this.waveEnded = true; // Set to true to trigger first wave immediately
         
+        // Recalculate timings for wave 1
+        this.calculateWaveSettings();
+        
         // Hide any UI elements
         this.hideWaveTimerUI();
+    }
+    
+    // Add resize handler
+    handleResize() {
+        // Update timer position when window resizes
+        this.updateWaveTimerUIPosition();
     }
 } 

@@ -134,31 +134,99 @@ export class Bullet {
         if (!this.isActive) return;
         
         ctx.save();
-        ctx.translate(offsetX, offsetY);
         
-        // Draw bullet based on shape
-        ctx.fillStyle = this.color;
-        
+        // Draw glowing effect for bullets
         if (this.shape === 'rectangle') {
             // For rectangle bullets, rotate to face direction of travel
             if (this.target) {
                 const dx = this.target.x - this.x;
                 const dy = this.target.y - this.y;
                 const angle = Math.atan2(dy, dx);
+
                 
-                // Move to center, rotate, then draw
+                // Create glow gradient
+                const glowSize = this.width * 0.5;
+                ctx.save();
                 ctx.translate(this.x, this.y);
                 ctx.rotate(angle);
+                
+                // Draw glow
+                const glowGradient = ctx.createRadialGradient(
+                    0, 0, 0,
+                    0, 0, this.width
+                );
+                glowGradient.addColorStop(0, this.color);
+                glowGradient.addColorStop(0.5, this.color.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+                glowGradient.addColorStop(1, this.color.replace(')', ', 0)').replace('rgb', 'rgba'));
+                
+                ctx.fillStyle = glowGradient;
+                ctx.fillRect(-this.width * 0.75, -this.height * 1.5, this.width * 1.5, this.height * 3);
+                
+                // Draw bullet
+                ctx.fillStyle = this.color;
                 ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                
+                // Draw highlight
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height / 4);
+                
+                ctx.restore();
             } else {
                 // If no target, just draw without rotation
+                ctx.fillStyle = this.color;
                 ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
             }
         } else {
-            // Default to circle
+            // Enhanced circular bullet with glow
+            
+            // Draw outer glow
+            const glowGradient = ctx.createRadialGradient(
+                this.x, this.y, 0,
+                this.x, this.y, this.size * 1.5
+            );
+            glowGradient.addColorStop(0, this.color);
+            glowGradient.addColorStop(0.5, this.color.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+            glowGradient.addColorStop(1, this.color.replace(')', ', 0)').replace('rgb', 'rgba'));
+            
+            ctx.fillStyle = glowGradient;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw bullet
+            ctx.fillStyle = this.color;
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.size / 2, 0, Math.PI * 2);
             ctx.fill();
+            
+            // Draw highlight/reflection
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(this.x - this.size / 6, this.y - this.size / 6, this.size / 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Draw particle trail
+        if (this.target && this.speed > 100) {
+            const dx = this.target.x - this.x;
+            const dy = this.target.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const dirX = dx / distance;
+            const dirY = dy / distance;
+            
+            const trailLength = Math.min(6, Math.floor(this.speed / 50));
+            
+            for (let i = 1; i <= trailLength; i++) {
+                const trailX = this.x - dirX * (i * this.size * 0.8);
+                const trailY = this.y - dirY * (i * this.size * 0.8);
+                const opacity = 0.7 - (i / trailLength) * 0.7;
+                const trailSize = (this.size / 2) * (1 - i / trailLength);
+                
+                ctx.fillStyle = this.color.replace(')', `, ${opacity})`).replace('rgb', 'rgba');
+                ctx.beginPath();
+                ctx.arc(trailX, trailY, trailSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
         
         ctx.restore();

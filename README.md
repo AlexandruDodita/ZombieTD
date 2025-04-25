@@ -1,62 +1,76 @@
 # Tower Defense Game
 
-A desktop-ready, modular tower defense game built with HTML Canvas, JavaScript, and Electron.
+A browser-based tower defense game built with vanilla JavaScript, HTML Canvas, and CSS. The game features dynamic enemy spawning, strategic tower placement, resource management, and progressive difficulty.
 
-## Game Description
+## Game Overview
 
-Defend your base from waves of enemies by strategically placing towers and walls on a tile grid. The main tower is placed at the center of the map, and you can build additional defenses to protect it. Enemies spawn at the edges of the map and target your main tower.
+Defend your main tower from waves of enemies by strategically placing defensive structures on a dynamically generated battlefield. Enemies spawn from the edges of the map and navigate toward your main tower at the center. Build and upgrade your defenses to survive as long as possible against increasingly difficult waves.
 
-## Features
+## Core Features
 
-- Tile-based map system
-- Multiple tower types with different abilities
-- Various enemy types with different behaviors
-- Wave-based progression
-- Tower upgrades
-- Resource management (gold)
+### Defensive Structures
+- **Main Tower**: Your primary structure to defend, featuring 360° rotation and automatic firing
+- **Cannon Tower**: Medium-range tower with splash damage capabilities
+- **Sniper Tower**: Long-range tower with high damage and penetration
+- **Walls**: Low-cost defensive barriers that block enemy movement
 
-## How to Play
+### Enemy Types
+- **Zombies**: Standard enemies with balanced stats
+- **Runners**: Fast, low-health enemies that can quickly overwhelm your defenses
+- **Tanks**: Slow but high-health enemies that can absorb significant damage
+- **Bosses**: Special enemies with extremely high health that appear on milestone waves
 
-1. Start a wave using the "Start Wave" button
-2. Place towers and walls to defend your base
-3. Earn gold by defeating enemies
-4. Upgrade your towers to increase their effectiveness
-5. Survive as many waves as possible!
+### Gameplay Mechanics
+- **Resource System**: Earn gold by defeating enemies; spend it on new defenses or upgrades
+- **Wave Progression**: Face increasingly difficult waves with more numerous and stronger enemies
+- **Tower Upgrades**: All defensive structures can be upgraded to level 3, enhancing their abilities
+- **Health Regeneration**: Structures slowly regenerate health between enemy attacks
+- **Interactive UI**: Intuitive interface for building, upgrading, and selling defenses
 
-## Development
+## Technical Implementation
+
+The game features a modular architecture with clean separation of concerns:
+- **Tile-based Map System**: Grid-based game world with visual variety
+- **Enemy Pathfinding**: Adaptive movement AI that navigates around obstacles
+- **Bullet Physics**: Different projectile types with varied behaviors (splash, penetration)
+- **Animation System**: Smooth visual effects for attacks, movements, and interactions
+- **Audio Manager**: Comprehensive sound system with dynamic effects and background music
+
+## Play Instructions
+
+1. Start the game and build initial defenses with your starting gold
+2. Place defensive structures strategically to create choke points
+3. Balance between offensive towers and defensive walls
+4. Manage your gold efficiently - upgrade existing defenses or build new ones
+5. Prepare for wave announcements that indicate when enemies will spawn
+6. Adjust your strategy based on the types of enemies appearing
+
+## Development Setup
 
 ### Prerequisites
-
 - Node.js and npm
 
 ### Installation
-
 1. Clone the repository
-2. Install dependencies:
-
-```
-npm install
-```
-
-3. Run the game:
-
-```
-npm start
-```
+2. Install dependencies: `npm install`
+3. Start the development server: `npm start`
 
 ### Project Structure
-
-- `index.html` - Base layout and canvas
-- `style.css` - Minimal responsive design
-- `main.js` - Electron main process
-- `preload.js` - For communication between frontend and Electron
-- `game/game.js` - Main game loop, rendering, and logic
-- `game/tilemap.js` - Handles the tile grid and tower placement
-- `game/defenses.js` - Classes for towers, walls, and upgrade logic
-- `game/enemies.js` - Classes for enemies and movement logic
-- `game/spawner.js` - Handles wave progression and enemy spawning
-- `assets/` - Sprites for towers and enemies (to be added later)
+```
+├── game/           # Core game logic files
+│   ├── game.js     # Main game loop and coordination
+│   ├── tilemap.js  # Map generation and management
+│   ├── enemies.js  # Enemy classes and behavior
+│   ├── defenses.js # Tower and wall implementation
+│   ├── bullets.js  # Projectile physics and effects
+│   ├── spawner.js  # Wave management and enemy spawning
+│   ├── ui.js       # User interface management
+│   └── audio.js    # Sound effects and music
+├── index.html      # Game entry point
+├── styles.css      # Game styling
+└── assets/         # Game resources (audio, etc.)
+```
 
 ## License
 
-MIT 
+MIT License 

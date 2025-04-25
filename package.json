@@ -4,11 +4,13 @@
   "description": "Desktop Tower Defense Game",
   "main": "main.js",
   "scripts": {
-    "start": "electron . --no-sandbox"
+    "start": "electron . --no-sandbox",
+    "build": "electron-builder"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^25.0.0"
+    "electron": "^25.0.0",
+    "electron-builder": "^26.0.12"
   }
-} 
+}

@@ -3,6 +3,7 @@ import { MainTower, CannonTower, SniperTower, Wall } from './defenses.js';
 import { Zombie, Runner, Tank, Boss } from './enemies.js';
 import { Spawner } from './spawner.js';
 import { UIManager } from './ui.js';
+import { AudioManager } from './audio.js';
 
 class Game {
     constructor() {
@@ -28,6 +29,9 @@ class Game {
         this.enemies = [];
         this.mainTower = null;
         this.spawner = null;
+        
+        // Audio manager
+        this.audio = new AudioManager();
         
         // UI Manager
         this.ui = new UIManager(this);
@@ -55,7 +59,7 @@ class Game {
         this.handleResize(); // Set initial canvas size
         
         // Create tile map (30x20 grid with 40px tiles)
-        this.tileMap = new TileMap(40, 30, 40);
+        this.tileMap = new TileMap(70, 60, 30);
         
         // Show start menu
         this.ui.showScene('start');
@@ -72,6 +76,14 @@ class Game {
             document.getElementById('game-ui').classList.remove('hidden');
         } else if (state === 'start' || state === 'game-over') {
             document.getElementById('game-ui').classList.add('hidden');
+            if (state === 'game-over') {
+                this.audio.playSound('gameOver');
+            }
+        }
+        
+        // Start background music when game starts or in main menu (if not muted)
+        if (state === 'playing' || state === 'start') {
+            this.audio.startMusic();
         }
     }
     
@@ -84,12 +96,12 @@ class Game {
         this.isPlacingDefense = false;
         this.defenseToPlace = null;
         
-        // Clear entities (except main tower and tilemap)
+        // Clear entities (except tilemap)
         this.towers = [];
         this.walls = [];
         this.enemies = [];
         
-        // Clear occupied state on tilemap (except for main tower area)
+        // Clear occupied state on tilemap
         for(let y = 0; y < this.tileMap.rows; y++) {
             for(let x = 0; x < this.tileMap.cols; x++) {
                 this.tileMap.setTileOccupied(x, y, false);
@@ -97,9 +109,8 @@ class Game {
         }
 
         // Properly center the main tower in the map
-        // For a 2x2 tower and 30x20 grid, we want it at (14,9) for true center
-        const centerX = Math.floor(this.tileMap.cols / 2) ; // For a 2x2 tower
-        const centerY = Math.floor(this.tileMap.rows / 2) ;
+        const centerX = Math.floor(this.tileMap.cols / 2) -1;
+        const centerY = Math.floor(this.tileMap.rows / 2) -1;
         this.mainTower = new MainTower(centerX, centerY);
         this.mainTower.game = this; // Add reference to game
         this.tileMap.setRectangleOccupied(centerX, centerY, this.mainTower.width, this.mainTower.height, true);
@@ -114,142 +125,149 @@ class Game {
         // Connect spawner to skipWaveTimer method
         this.spawner.setSkipTimerCallback(this.skipWaveTimer);
         
+        // Hide any open UI dialogs
+        document.getElementById('sell-upgrade-dialog').classList.add('hidden');
+        
         // Update UI
         this.updateUI();
     }
     
     gameLoop(timestamp) {
         // Calculate delta time
-        const deltaTime = timestamp - this.lastTime;
-        this.lastTime = timestamp;
+        if (!this.lastTimestamp) {
+            this.lastTimestamp = timestamp;
+        }
+        const deltaTime = timestamp - this.lastTimestamp;
+        this.lastTimestamp = timestamp;
         
-        // Clear canvas
+        // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw background
-        this.ctx.fillStyle = '#f0f0f0';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Draw tilemap grid
+        // Draw background (tileMap)
         this.tileMap.draw(this.ctx);
         
-        // If not playing, don't update game logic
+        // Skip updates if not in 'playing' state
         if (this.gameState !== 'playing') {
             requestAnimationFrame(this.gameLoop);
             return;
         }
         
-        // Calculate canvas offsets for bullet rendering
-        const canvasWidth = this.ctx.canvas.width;
-        const canvasHeight = this.ctx.canvas.height;
-        const mapWidth = this.tileMap.cols * this.tileMap.tileSize;
-        const mapHeight = this.tileMap.rows * this.tileMap.tileSize;
-        const offsetX = (canvasWidth - mapWidth) / 2;
-        const offsetY = (canvasHeight - mapHeight) / 2;
+        // Calculate offset for centering the map on the canvas
+        const offsetX = (this.canvas.width - this.tileMap.cols * this.tileMap.tileSize) / 2;
+        const offsetY = (this.canvas.height - this.tileMap.rows * this.tileMap.tileSize) / 2;
         
-        // Update and draw towers
+        // Update and draw defenses (mainTower, towers, walls)
+        
+        // Main tower
         if (this.mainTower) {
             this.mainTower.update(deltaTime, this.enemies);
             this.mainTower.draw(this.ctx, this.tileMap.tileSize);
         }
         
-        for (const tower of this.towers) {
-            tower.update(deltaTime, this.enemies);
-            tower.draw(this.ctx, this.tileMap.tileSize);
+        // Towers
+        for (let i = this.towers.length - 1; i >= 0; i--) {
+            this.towers[i].update(deltaTime, this.enemies);
+            this.towers[i].draw(this.ctx, this.tileMap.tileSize);
         }
         
-        // Update and draw walls
-        for (const wall of this.walls) {
-            wall.update(deltaTime);
-            wall.draw(this.ctx, this.tileMap.tileSize);
+        // Walls
+        for (let i = this.walls.length - 1; i >= 0; i--) {
+            this.walls[i].update(deltaTime);
+            this.walls[i].draw(this.ctx, this.tileMap.tileSize);
         }
         
         // Update and draw enemies
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const enemy = this.enemies[i];
             
-            // Update enemy and check if attacking
+            // Update enemy and check if it's dealing damage
             const isDealingDamage = enemy.update(deltaTime, this.mainTower, this.tileMap);
+            
+            // Draw the enemy
             enemy.draw(this.ctx, this.tileMap.tileSize);
             
-            // Handle dead enemies
+            // Handle enemy death
             if (enemy.health <= 0) {
+                // Grant gold and score based on enemy type
                 this.gold += enemy.goldValue;
                 this.score += enemy.goldValue;
+                
+                // Remove the enemy
                 this.enemies.splice(i, 1);
+                
+                // Update UI
                 this.updateUI();
+                
                 continue;
             }
             
-            // Handle enemies dealing damage to main tower
+            // Handle enemy dealing damage
             if (isDealingDamage) {
-                this.mainTower.takeDamage(enemy.damage);
-                this.updateUI();
+                // Find the defense being attacked
+                const targetDefense = enemy.findNearestTower();
                 
-                if (this.mainTower.health <= 0) {
-                    this.gameOver();
-                    return;
+                if (targetDefense) {
+                    // Apply damage to the target defense
+                    const isDestroyed = targetDefense.takeDamage(enemy.damage);
+                    
+                    // Check if the defense was the main tower and it was destroyed
+                    if (targetDefense === this.mainTower && isDestroyed) {
+                        this.gameOver();
+                        return;
+                    }
                 }
             }
         }
         
-        // Update spawner
+        // Update the spawner
         if (this.spawner) {
-            // If wave ended and new wave starting, update game wave number
-            const prevSpawnerWaveNumber = this.spawner.waveNumber;
-            this.spawner.update(deltaTime, 1, this.enemies); // Always pass 1 as waveNumber to ensure it stays at 1
+            this.spawner.update(deltaTime, this.waveNumber, this.enemies);
             
-            // If the spawner wave number increased, update the game wave number
-            if (this.spawner.waveNumber > prevSpawnerWaveNumber) {
+            // Check if spawner incremented the wave number
+            if (this.spawner.waveNumber > this.waveNumber) {
                 this.waveNumber = this.spawner.waveNumber;
                 this.updateUI();
             }
         }
         
-        // Draw placement preview
+        // Draw defense placement preview
         if (this.isPlacingDefense && this.hoveredGridCoords) {
-            const { x, y } = this.hoveredGridCoords;
-            
-            // Get defense dimensions
-            let width = 1;
-            let height = 1;
-            
-            if (this.defenseToPlace === 'cannon' || this.defenseToPlace === 'sniper') {
-                width = 2;
-                height = 2;
-            }
-            
-            // Check if placement is valid
-            const canPlace = this.tileMap.canPlaceDefense(x, y, width, height);
-            
-            // Draw semi-transparent preview
-            this.ctx.globalAlpha = canPlace ? 0.5 : 0.3;
-            
-            // Calculate offset for canvas centering
-            this.ctx.save();
-            this.ctx.translate(offsetX, offsetY);
-            
-            // Draw placement area
-            this.ctx.fillStyle = canPlace ? 'rgba(46, 204, 113, 0.5)' : 'rgba(231, 76, 60, 0.5)';
-            this.ctx.fillRect(
-                x * this.tileMap.tileSize,
-                y * this.tileMap.tileSize,
-                width * this.tileMap.tileSize,
-                height * this.tileMap.tileSize
+            const defenseSize = this.getDefenseSize(this.defenseToPlace);
+            const isValidPlacement = this.tileMap.canPlaceDefense(
+                this.hoveredGridCoords.x,
+                this.hoveredGridCoords.y,
+                defenseSize.width,
+                defenseSize.height
             );
             
-            this.ctx.restore();
+            // Draw placement preview rectangle
+            this.ctx.globalAlpha = 0.5;
+            this.ctx.fillStyle = isValidPlacement ? 'rgba(0, 255, 0, 0.3)' : 'rgba(255, 0, 0, 0.3)';
+            this.ctx.fillRect(
+                offsetX + this.hoveredGridCoords.x * this.tileMap.tileSize,
+                offsetY + this.hoveredGridCoords.y * this.tileMap.tileSize,
+                defenseSize.width * this.tileMap.tileSize,
+                defenseSize.height * this.tileMap.tileSize
+            );
             this.ctx.globalAlpha = 1.0;
         }
         
-        // Continue loop
+        // Continue the game loop
         requestAnimationFrame(this.gameLoop);
     }
     
     handleResize() {
-        // Set canvas size to window size
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        // Get the canvas element
+        const canvas = document.getElementById('game-canvas');
+        
+        // Update canvas size
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        
+        // Update wave timer UI position if spawner exists
+        if (this.spawner) {
+            this.spawner.updateWaveTimerUIPosition();
+        }
     }
     
     handleClick(event) {
@@ -316,7 +334,7 @@ class Game {
         } else if (this.defenseToPlace === 'wall') {
             width = 1;
             height = 1;
-            cost = 25;
+            cost = 10;
         }
         
         // Check if placement is valid
@@ -447,11 +465,27 @@ class Game {
     gameOver() {
         this.gameState = 'game-over';
         
-        // Clear only in-game entities, don't reset position or recreate objects
+        // Just clear enemies but keep other game state
+        // Do not destroy any objects as they'll be properly reset when restarting
         this.enemies = [];
+        
+        // Play game over sound
+        this.audio.playSound('gameOver');
         
         // Update UI with final score
         this.ui.showGameOver(this.score);
+    }
+    
+    // Add a helper method to get defense dimensions
+    getDefenseSize(defenseType) {
+        switch (defenseType) {
+            case 'cannon':
+            case 'sniper':
+                return { width: 2, height: 2 };
+            case 'wall':
+            default:
+                return { width: 1, height: 1 };
+        }
     }
 }
 

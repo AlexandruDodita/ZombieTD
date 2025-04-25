@@ -15,7 +15,7 @@ Manages the overall game state (start, playing, game-over), initializes game com
     *   Initializes the game by getting references to the canvas and its 2D context.
     *   Sets up initial game state variables (`gold`, `waveNumber`, `score`, `gameState`, etc.).
     *   Initializes arrays to hold game entities (`towers`, `walls`, `enemies`).
-    *   Creates instances of core managers: `UIManager` and `TileMap` (indirectly via `init`).
+    *   Creates instances of core managers: `UIManager`, `AudioManager` and `TileMap` (indirectly via `init`).
     *   Binds necessary methods (`gameLoop`, `handleResize`, etc.) to the class instance.
     *   Attaches event listeners for window resize, canvas clicks, and mouse movement.
     *   Calls `init()` to perform further setup.
@@ -27,14 +27,17 @@ Manages the overall game state (start, playing, game-over), initializes game com
 *   **`Game.setGameState(state)` - Scope:**
     *   Updates the internal `gameState` property.
     *   Manages the visibility of core UI elements based on the new state (e.g., hides game UI in 'start' or 'game-over', shows it in 'playing').
+    *   Starts background music when the state changes to 'playing'.
+    *   Plays the game over sound when the state changes to 'game-over'.
     *   Crucially, calls `this.reset()` when the state changes to 'playing' to ensure a clean start or restart.
 *   **`Game.reset()` - Scope:**
     *   Resets all core game state variables (`gold`, `waveNumber`, `score`, selection states) to their initial values.
     *   Clears entity arrays (`towers`, `walls`, `enemies`).
-    *   Resets the `TileMap` occupation grid (except for the main tower's initial placement).
+    *   Resets the `TileMap` occupation grid completely (no previous state is maintained).
     *   Re-creates the `MainTower` instance at the calculated center position and marks its tiles as occupied.
     *   Resets the `Spawner` instance by calling `spawner.reset()` or creates a new one if it doesn't exist.
     *   Re-connects the spawner's skip timer callback.
+    *   Hides any open UI dialogs to ensure a clean UI state.
     *   Updates the game UI elements via `updateUI()`.
 *   **`Game.gameLoop(timestamp)` - Scope:**
     *   The heart of the game's execution, called repeatedly via `requestAnimationFrame`.
@@ -114,9 +117,10 @@ Manages the overall game state (start, playing, game-over), initializes game com
     *   (The health counter update was removed as health is shown via the main tower's UI bar).
 *   **`Game.gameOver()` - Scope:**
     *   Sets `gameState` to 'game-over'.
-    *   Clears the `enemies` array.
+    *   Clears only the enemies array but keeps other game state intact, as `reset()` will handle proper reinitialization when restarting.
+    *   Plays the game over sound effect using the `AudioManager`.
     *   Calls `ui.showGameOver()` to display the game over screen with the final `score`.
-        *   Tied to `UIManager.showGameOver()`.
+        *   Tied to `UIManager.showGameOver()`, `AudioManager.playSound()`.
 
 ---
 
@@ -125,7 +129,7 @@ Manages the overall game state (start, playing, game-over), initializes game com
 Contains the `Spawner` class, responsible for managing enemy wave progression and spawning individual enemies.
 
 ### Class `Spawner` - General Scope
-Handles the timing between waves, the timing between individual enemy spawns within a wave, determining which enemies to spawn based on the wave number, creating enemy instances, and managing the wave timer UI (display and skip button).
+Handles the timing between waves, the timing between individual enemy spawns within a wave, determining which enemies to spawn based on the wave number, creating enemy instances, and managing the wave timer UI (display and skip button). Implements a progressive difficulty curve with appropriate pacing.
 
 *   **`Spawner.constructor(tileMap, game)` - Scope:**
     *   Stores references to the `tileMap` and the main `game` object.
@@ -133,18 +137,26 @@ Handles the timing between waves, the timing between individual enemy spawns wit
     *   Sets the initial `waveNumber` to 0 (so the first call to `startWave` makes it wave 1).
     *   Sets `waveEnded` to true and `waveTimer` to 0 to trigger the first wave immediately upon game start/reset.
     *   Initializes `spawnedEnemies` (reference passed from `Game`).
-    *   Defines wave settings (`timeBetweenWaves`, `timeBetweenSpawns`).
+    *   Calculates wave settings via `calculateWaveSettings()`.
     *   Calls `createWaveTimerUI()` to set up the HTML elements for the timer and skip button.
+*   **`Spawner.calculateWaveSettings()` - Scope:**
+    *   Determines timing settings based on current wave number.
+    *   Sets longer breaks between early waves (15 seconds for waves 1-5, gradually decreasing to 8 seconds for waves 16+).
+    *   Sets slower spawn rates for early waves (1.5 seconds between spawns for waves 1-5, gradually decreasing to 1 second for waves 11+).
+    *   Provides more breathing room for players in early waves to build defenses.
 *   **`Spawner.createWaveTimerUI()` - Scope:**
     *   Checks if the timer UI container already exists. If not:
     *   Creates the necessary HTML `div` and `button` elements for the timer display and skip button.
-    *   Assigns IDs and styles the elements (positioning, appearance).
+    *   Creates a wave number display showing which wave was just completed.
+    *   Assigns IDs and styles the elements (positioning, appearance, background, borders, shadows).
     *   Adds event listeners for the skip button (hover effects and click).
     *   The click listener calls an `onSkipTimer` callback function (which is set by `Game` using `setSkipTimerCallback`).
     *   Appends the created elements to the document body.
     *   Initially hides the timer UI using `hideWaveTimerUI()`.
 *   **`Spawner.showWaveTimerUI()` - Scope:**
     *   Makes the wave timer container visible by setting its `display` style to 'block'.
+    *   Updates the wave number text to show which wave was just completed.
+    *   Shows a special message ("Prepare for Wave 1!") before the first wave.
 *   **`Spawner.hideWaveTimerUI()` - Scope:**
     *   Hides the wave timer container by setting its `display` style to 'none'.
 *   **`Spawner.updateWaveTimerUI(seconds)` - Scope:**
@@ -156,14 +168,14 @@ Handles the timing between waves, the timing between individual enemy spawns wit
         *   Hides the wave timer UI.
         *   Decrements the `spawnTimer`.
         *   If `spawnTimer` reaches zero and enemies are left to spawn, calls `spawnEnemy()`, resets `spawnTimer`, decrements `enemiesLeftToSpawn`.
-        *   If `enemiesLeftToSpawn` reaches zero, sets `isSpawning` to false, `waveEnded` to true, and resets the `waveTimer` for the countdown to the *next* wave.
+        *   If `enemiesLeftToSpawn` reaches zero, sets `isSpawning` to false, `waveEnded` to true, recalculates wave settings using `calculateWaveSettings()` and resets the `waveTimer` for the countdown to the *next* wave.
     *   **If `isSpawning` is false:**
         *   Checks if the `waveEnded` is true (meaning the spawning phase is done) AND if `currentEnemies.length === 0` (all enemies are defeated).
         *   If both conditions are met, it means the countdown between waves should be active:
             *   Shows the wave timer UI.
             *   Decrements the `waveTimer`.
             *   Updates the UI text via `updateWaveTimerUI()`.
-            *   If `waveTimer` reaches zero, calls `startWave()` to begin the next spawning phase and sets `waveEnded` to false.
+            *   If `waveTimer` reaches zero, calls `startWave()` to begin the next spawning phase, sets `waveEnded` to false, and plays the wave start sound.
 *   **`Spawner.startWave()` - Scope:**
     *   Called automatically when the `waveTimer` countdown finishes or manually via the skip button logic.
     *   Hides the wave timer UI.
@@ -171,11 +183,13 @@ Handles the timing between waves, the timing between individual enemy spawns wit
     *   Resets `waveTimer` (for the *next* inter-wave countdown, although it's not used immediately).
     *   Resets `spawnTimer` to 0 for the first spawn.
     *   **Increments its internal `this.waveNumber`.**
-    *   Calculates `enemiesLeftToSpawn` based on the new `this.waveNumber` (increases difficulty).
+    *   Calculates `enemiesLeftToSpawn` based on the new `this.waveNumber` (increases difficulty with more controlled progression).
     *   Logs the start of the wave.
+    *   Recalculates wave settings for spawn timing.
 *   **`Spawner.skipTimer()` - Scope:**
     *   Called by the `onSkipTimer` callback (triggered by the skip button click in the UI).
     *   If the spawner is *not* currently spawning (`!isSpawning`) and the wave *has* ended (`waveEnded`), it sets the `waveTimer` to 0, causing `update()` to immediately trigger `startWave()` on the next frame.
+    *   Plays the wave start sound when skipping.
 *   **`Spawner.setSkipTimerCallback(callback)` - Scope:**
     *   Allows the `Game` class to provide the function (`Game.skipWaveTimer`) that should be executed when the skip button is clicked.
 *   **`Spawner.spawnEnemy()` - Scope:**
@@ -188,6 +202,7 @@ Handles the timing between waves, the timing between individual enemy spawns wit
 *   **`Spawner.reset()` - Scope:**
     *   Called by `Game.reset()`.
     *   Resets all internal state variables (`isSpawning`, `waveTimer`, `spawnTimer`, `enemiesLeftToSpawn`, `waveNumber`, `waveEnded`) to their initial constructor values, ensuring a clean state for game restarts.
+    *   Recalculates timings for wave 1.
     *   Hides the wave timer UI.
 
 ---
@@ -322,6 +337,7 @@ Abstract base class for all placeable defensive structures (Towers and Walls). M
     *   Initializes `level`, `upgradeCost`, default `width`/`height`, `baseCost`, `totalSpent` (for sell value).
     *   Initializes health properties (`health`, `maxHealth`, `lastHealthChange`, `healthBarOpacity`).
     *   Initializes regeneration properties (`regenTimer`, `regenRate`, `regenInterval`).
+    *   Sets up level-based visual effects with color palettes for different levels.
     *   **Note:** Does *not* store `game` reference directly; subclasses rely on `this.game` being set by the `Game` class after instantiation.
 *   **`Defense.draw(ctx, tileSize)` - Scope:**
     *   Calculates canvas center and map dimensions dynamically using `this.game.tileMap.cols`/`rows`.
@@ -335,6 +351,13 @@ Abstract base class for all placeable defensive structures (Towers and Walls). M
     *   For non-main towers, fades out (`healthBarOpacity`) if health is full, otherwise sets opacity to 1.
     *   Calculates bar dimensions and position (above the defense).
     *   Draws the gray background and the colored health portion (color changes based on health percentage).
+*   **`Defense.getColorForLevel(colorType)` - Scope:**
+    *   Returns the appropriate color from the `levelColors` array for the defense's current level.
+    *   Used to style the defense visually based on its upgrade level.
+*   **`Defense.drawLevelGlow(ctx, x, y, width, height)` - Scope:**
+    *   Draws a radial gradient glow effect around the defense based on its level.
+    *   Level 1 defenses have no glow, level 2 have a white glow, level 3 have a golden glow.
+    *   Creates a visual indicator of the defense's power level.
 *   **`Defense.update(deltaTime)` - Scope:**
     *   Handles health regeneration logic.
     *   If the instance is *not* a `MainTower` and `health < maxHealth`, increments `regenTimer`.
@@ -344,16 +367,10 @@ Abstract base class for all placeable defensive structures (Towers and Walls). M
     *   Records the time of damage (`lastHealthChange`) - currently unused but could be for effects.
     *   Sets `healthBarOpacity` to 1 to ensure the health bar is visible.
 *   **`Defense.upgrade()` - Scope:**
-    *   Base upgrade logic called by subclasses via `super.upgrade()`.
-    *   Adds `upgradeCost` to `totalSpent`.
-    *   Increments `level`.
-    *   Increases `upgradeCost` (e.g., by 1.5x).
-    *   Increases `maxHealth` (e.g., by 1.2x).
-    *   Fully heals the defense (`health = maxHealth`).
-*   **`Defense.getTotalValue()` - Scope:**
-    *   Calculates the total gold invested in the defense (`baseCost + totalSpent`). Used by `UIManager` to calculate sell price (usually 50% of this value).
-*   **`Defense.getOccupiedTiles()` - Scope:**
-    *   Returns an array of `{x, y}` grid coordinates representing all tiles covered by the defense, based on its `gridX`, `gridY`, `width`, and `height`.
+    *   Tracks the amount spent on upgrades in `totalSpent`.
+    *   Increments `level`, increases `upgradeCost` by 50%.
+    *   Increases `maxHealth` by 20% and heals the defense to full.
+    *   Plays upgrade sound effect via the audio manager.
 
 ### Class `Tower` extends `Defense` - General Scope
 Abstract base class specifically for *attacking* towers. Inherits from `Defense` and adds properties and methods related to targeting, firing, range, damage, fire rate, and bullet management.
@@ -363,6 +380,7 @@ Abstract base class specifically for *attacking* towers. Inherits from `Defense`
     *   Initializes tower-specific properties: `range`, `damage`, `fireRate`, `fireTimer`, `target` (initially null).
     *   Initializes barrel rotation properties: `barrelAngle`, `targetAngle`, `rotationSpeed`.
     *   Initializes `bullets` array.
+    *   Sets tower-specific level color schemes.
 *   **`Tower.update(deltaTime, enemies)` - Scope:**
     *   Calls `super.update(deltaTime)` to handle health regeneration (from `Defense`).
     *   Calls `updateBullets()` to update and remove inactive bullets.
@@ -378,7 +396,7 @@ Abstract base class specifically for *attacking* towers. Inherits from `Defense`
         *   Tied to `Bullet.update()`.
 *   **`Tower.findTarget(enemies)` - Scope:**
     *   Resets `this.target` to null.
-    *   Calculates the tower's center pixel coordinates using `gridX`, `width`, `height`, and the *hardcoded* tile size 40 (potential issue if tile size changes!).
+    *   Calculates the tower's center pixel coordinates using `gridX`, `width`, `height`, and the tile size from `this.game.tileMap.tileSize`.
     *   Iterates through the `enemies` array provided by `Game`.
     *   Calculates the distance from the tower center to each enemy's center (`enemy.x`, `enemy.y`).
     *   If an enemy is closer than the current `closestDistance` and within `this.range` (converted to pixels using hardcoded 40), it becomes the new `target`.
@@ -391,14 +409,27 @@ Abstract base class specifically for *attacking* towers. Inherits from `Defense`
     *   Normalizes `barrelAngle` to be within [0, 2*PI].
 *   **`Tower.fire()` - Scope:**
     *   **Base implementation (used by `MainTower` implicitly if not overridden):** Calculates tower center pixel coordinates (using hardcoded 40), creates a `MainTowerBullet`, and pushes it to `this.bullets`.
+    *   Plays the appropriate shooting sound based on the tower type using the audio manager.
     *   **Note:** Specific tower subclasses (`CannonTower`, `SniperTower`) override this to create their specific bullet types.
 *   **`Tower.drawBase(ctx, x, y, tileSize, color)` - Scope:**
-    *   Helper method to draw a simple filled rectangle representing the tower's base, covering its `width` and `height` in tiles.
+    *   Helper method to draw a tower base with level-specific styling.
+    *   Uses the tower's level colors or a provided override color.
+    *   Draws the level-based glow effect for levels 2-3.
+    *   Creates a gradient fill with 3D shading effects.
+    *   Adds corner bolts and mechanical details.
+    *   Draws the tower's level number in the center.
+    *   Adds a decorative star for level 3 towers.
+*   **`Tower.drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius)` - Scope:**
+    *   Helper method to draw a golden star shape for level 3 towers.
+    *   Creates a polygonal star using mathematical calculations.
 *   **`Tower.drawBarrel(ctx, x, y, tileSize, color, length, width)` - Scope:**
     *   Helper method to draw the tower's barrel.
+    *   Uses level-specific barrel colors or a provided override color.
     *   Calculates the tower's center pixel coordinates.
     *   Saves canvas context, translates to the center, rotates by `this.barrelAngle`.
-    *   Draws the rectangular barrel shape.
+    *   Draws the rectangular barrel shape with gradient and highlights.
+    *   Adds level-specific barrel enhancements (highlight line for levels 2-3, golden tip for level 3).
+    *   Draws a muzzle flash effect when firing.
     *   Restores canvas context.
 *   **`Tower.drawRangeCircle(ctx, x, y, tileSize, color)` - Scope:**
     *   Helper method to draw the tower's range indicator.
@@ -415,41 +446,36 @@ Abstract base class specifically for *attacking* towers. Inherits from `Defense`
     *   **Note:** Subclasses can override this to provide different stat scaling.
 
 ### Class `MainTower` extends `Tower` - General Scope
-The central defense structure the player must protect. It's larger, has high health, and a unique UI health bar display.
+The central tower that players must defend. Acts as both a stronghold and an offensive tower.
 
 *   **`MainTower.constructor(gridX, gridY)` - Scope:**
     *   Calls `super()` (the `Tower` constructor).
-    *   Sets specific stats: `range`, `damage`, `fireRate`, `upgradeCost`.
-    *   Sets `baseCost` to 0 (it's free).
-    *   Sets `width` and `height` to 2.
-    *   Sets high initial `health` and `maxHealth`.
+    *   Sets tower-specific properties: `range`, `damage`, `fireRate`, `upgradeCost`, `baseCost`.
+    *   Sets `width` and `height` to 2 (2x2 tiles).
+    *   Sets higher initial `health` and `maxHealth` (1000).
 *   **`MainTower.draw(ctx, tileSize)` - Scope:**
-    *   Calculates canvas offset using dynamic map dimensions.
-    *   Applies offset.
-    *   Calculates base position (`x`, `y`).
-    *   Draws the main tower's base (blue 2x2 square) and a center dot.
-    *   Calls `drawBarrel()` to draw its rotating gun.
-    *   Calls `drawRangeCircle()` to *always* show its range.
-    *   **Crucially:** Restores the context (`ctx.restore()`) to remove the centering offset *before* calling `drawUIHealthBar`.
-    *   Calls `drawUIHealthBar()` to draw the static health bar in the corner.
-    *   Saves context and re-applies offset translation *before* drawing bullets.
-    *   Calls `drawBullets()` passing the offsets.
-    *   Restores context.
+    *   Calculates offsets for canvas centering.
+    *   Creates an enhanced visual representation with:
+        *   A rounded gradient base with border highlights
+        *   A central platform with radial gradient
+        *   Metallic corner details with highlights
+        *   Four rotating barrels that move independently
+        *   A range circle showing attack radius
+    *   Draws the UI health bar at the top of the screen.
+    *   Renders active bullets.
+*   **`MainTower.drawCornerDetail(ctx, x, y, size)` - Scope:**
+    *   Helper method that draws decorative corner elements with highlights.
 *   **`MainTower.drawUIHealthBar(ctx, canvasWidth, canvasHeight)` - Scope:**
-    *   Draws the health bar that appears in the top-right corner of the screen.
-    *   Saves context and resets the transform (`ctx.setTransform(1, 0, 0, 1, 0, 0)`) to draw directly in screen coordinates, ignoring canvas offsets and rotations.
-    *   Defines bar dimensions and position (padding from corner).
-    *   Draws the background, border, and health fill (color based on percentage).
-    *   Draws the health text (`current / max`).
-    *   Restores the original context transform.
+    *   Draws a fixed-position health bar at the top of the screen.
+    *   Shows current health as a colored bar that changes from green to orange to red based on health percentage.
+    *   Displays health as text (current/max).
 *   **`MainTower.update(deltaTime, enemies)` - Scope:**
-    *   **Does NOT call `super.update()`** because the main tower does not regenerate health.
-    *   Calls `updateBullets()`, `findTarget()`, `updateBarrelRotation()`, and handles the firing timer logic similar to the base `Tower.update()`.
+    *   Overrides `Tower.update()`.
+    *   Does not use health regeneration.
+    *   Updates bullets, finds targets, updates barrel rotation, handles firing.
 *   **`MainTower.fire()` - Scope:**
-    *   Calculates tower center pixel coordinates (using hardcoded 40 - FIX NEEDED).
-    *   Creates a `MainTowerBullet` instance.
-    *   Pushes the bullet to `this.bullets`.
-        *   Tied to `MainTowerBullet` constructor.
+    *   Creates a `MainTowerBullet` at the tower's center, targeting the current enemy.
+    *   Adds the bullet to the `bullets` array.
 
 ### Class `CannonTower` extends `Tower` - General Scope
 A 2x2 tower firing splash damage bullets.
@@ -506,10 +532,16 @@ A simple 1x1 defensive structure that blocks enemies but does not attack. Has he
     *   Calls `super()` (the `Defense` constructor).
     *   Sets specific `upgradeCost`, `baseCost`.
     *   Sets initial `health` and `maxHealth`.
+    *   Sets wall-specific level color schemes for visual styling.
 *   **`Wall.draw(ctx, tileSize)` - Scope:**
     *   Calculates canvas offset using dynamic map dimensions.
     *   Applies offset.
-    *   Draws the wall's visual representation (gray square with details changing based on `this.level`).
+    *   Calls `drawLevelGlow()` to add level-specific glow effects.
+    *   Retrieves level-specific colors for the base and accent elements.
+    *   Draws the wall's visual representation with details changing based on level:
+        *   Level 1: Simple wall with cracks
+        *   Level 2: Reinforced wall with horizontal metal bars
+        *   Level 3: Advanced metal wall with bolts and reflective surface
     *   Draws health bar using `drawHealthBar()`.
     *   Restores context.
 *   **`Wall.update(deltaTime)` - Scope:**
@@ -559,15 +591,17 @@ Represents a projectile fired by a tower. Handles its movement towards a target,
         *   Tied to `Enemy.takeDamage()`.
 *   **`Bullet.draw(ctx, offsetX, offsetY)` - Scope:**
     *   Does nothing if `isActive` is false.
-    *   Saves context, applies canvas `offsetX`, `offsetY`.
-    *   Sets fill style to `this.color`.
+    *   Saves context state with `ctx.save()`.
+    *   **Note: Does not apply offsetX/offsetY translation as these are already handled by the tower's coordinate system.**
     *   If `shape` is 'rectangle':
         *   Calculates angle towards the `target`.
         *   Translates to the bullet's `x`, `y`, rotates by the angle.
-        *   Draws a filled rectangle centered at (0,0) with `this.width`, `this.height`.
+        *   Draws a rectangle with glow effects and highlights.
     *   If `shape` is 'circle' (or default):
-        *   Draws a filled circle at `this.x`, `this.y` with radius `this.size / 2`.
-    *   Restores context.
+        *   Draws an enhanced circular bullet with glowing effects using radial gradients.
+        *   Adds highlights and reflections for a more realistic appearance.
+    *   Adds particle trails behind the bullet, creating a motion blur effect.
+    *   Restores context with `ctx.restore()`.
 
 ### Class `CannonBullet` extends `Bullet` - General Scope
 A bullet with splash damage.
@@ -594,7 +628,7 @@ The default bullet type for the main tower.
 Contains the `UIManager` class, responsible for managing UI interactions, scene transitions, and dialogs.
 
 ### Class `UIManager` - General Scope
-Hides and shows different UI scenes (start menu, game over menu, main game UI), handles button clicks for starting/restarting the game, toggling the sidebar, selecting towers for placement, and managing the upgrade/sell dialog for defenses.
+Hides and shows different UI scenes (start menu, game over menu, main game UI), handles button clicks for starting/restarting the game, toggling the sidebar, selecting towers for placement, and managing the upgrade/sell dialog for defenses. Also provides audio control through a mute button.
 
 *   **`UIManager.constructor(game)` - Scope:**
     *   Stores a reference to the main `game` object.
@@ -602,8 +636,23 @@ Hides and shows different UI scenes (start menu, game over menu, main game UI), 
     *   Gets references to key HTML elements (menus, sidebar, buttons, dialogs).
     *   Removes the old 'start-wave' button (now handled by automatic timer).
     *   Hides the static 'health-counter' element's parent (health shown via main tower bar).
+    *   Creates a mute button for audio control.
     *   Binds necessary methods to the class instance.
     *   Calls `initEventListeners()`.
+    *   Enhances the upgrade/sell dialog styling.
+*   **`UIManager.createMuteButton()` - Scope:**
+    *   Creates a mute button element if it doesn't exist.
+    *   Styles the button with proper positioning, appearance, and hover effects.
+    *   Adds a click event listener that toggles the game's audio mute state.
+    *   Appends the button to the document body.
+*   **`UIManager.toggleMute()` - Scope:**
+    *   Calls `game.audio.toggleMute()` to toggle the audio mute state.
+    *   Updates the mute button icon to reflect the current state.
+*   **`UIManager.enhanceUpgradeDialog()` - Scope:**
+    *   Styles the upgrade/sell dialog with improved visuals.
+    *   Sets border radius, shadow, background colors, and padding.
+    *   Styles the title, stats section, and buttons for better appearance.
+    *   Differentiates button colors based on their function (sell, upgrade, close).
 *   **`UIManager.initEventListeners()` - Scope:**
     *   Attaches click listeners to various UI elements:
         *   Sidebar toggle button -> `toggleSidebar`
@@ -633,28 +682,31 @@ Hides and shows different UI scenes (start menu, game over menu, main game UI), 
     *   Called by `Game.selectDefenseAt()` when a placed defense is clicked.
     *   Stores the passed `defense` object in `this.selectedDefense`.
     *   Gets references to dialog elements (title, stats display, buttons).
-    *   Populates the dialog with the defense's details: name, level, damage, range.
-    *   Configures the Upgrade button: disables if max level (>=3) or not enough gold (`game.gold < defense.upgradeCost`), sets text to show cost.
+    *   Displays the defense name and level in the title.
+    *   Creates a formatted grid display of defense stats (health, damage, range, fire rate).
+    *   Configures the Upgrade button: disables if max level (>=3) or not enough gold, sets text to show cost, styling based on state.
     *   Configures the Sell button: calculates sell value (50% of `defense.getTotalValue()`) and sets button text.
-    *   Makes the dialog visible.
+    *   Makes the dialog visible with enhanced styling.
         *   Tied to `Defense.getTotalValue()`.
 *   **`UIManager.sellDefense()` - Scope:**
     *   Called by the Sell button in the dialog.
     *   Checks if `this.selectedDefense` is valid.
     *   Calculates sell value.
     *   Adds sell value to `game.gold`.
+    *   Plays the sell sound effect.
     *   Calls `game.removeDefense()` to remove the defense from the game logic and map.
     *   Hides the dialog and clears `this.selectedDefense`.
     *   Updates the main UI (`game.updateUI()`).
-        *   Tied to `Defense.getTotalValue()`, `Game.removeDefense()`, `Game.updateUI()`.
+        *   Tied to `Defense.getTotalValue()`, `Game.removeDefense()`, `Game.updateUI()`, `AudioManager.playSound()`.
 *   **`UIManager.upgradeDefense()` - Scope:**
     *   Called by the Upgrade button in the dialog.
     *   Checks if `this.selectedDefense` is valid and if the player has enough gold.
     *   Subtracts `defense.upgradeCost` from `game.gold`.
     *   Calls `this.selectedDefense.upgrade()` to apply the upgrade logic to the defense object.
+    *   Plays the upgrade sound effect.
     *   Hides and immediately re-shows the dialog using `showSellUpgradeDialog()` to reflect the updated stats and potentially disable the button if max level is reached.
     *   Updates the main UI (`game.updateUI()`).
-        *   Tied to `Defense.upgrade()`, `Game.updateUI()`.
+        *   Tied to `Defense.upgrade()`, `Game.updateUI()`, `AudioManager.playSound()`.
 *   **`UIManager.showGameOver(finalScore)` - Scope:**
     *   Called by `Game.gameOver()`.
     *   Updates the text content of the final score element on the game over screen.
@@ -667,17 +719,36 @@ Hides and shows different UI scenes (start menu, game over menu, main game UI), 
 Defines the `TileMap` class, responsible for managing the game grid, occupied tiles, and coordinate conversions.
 
 ### Class `TileMap` - General Scope
-Represents the playable game area as a grid. Tracks which tiles are occupied by defenses, provides methods for drawing the grid, checking tile occupancy, marking tiles, converting between screen and grid coordinates, and finding spawn locations.
+Represents the playable game area as a grid. Tracks which tiles are occupied by defenses, provides methods for drawing the grid, checking tile occupancy, marking tiles, converting between screen and grid coordinates, and finding spawn locations. Features visually varied tiles that create an abandoned battlefield appearance.
 
 *   **`TileMap.constructor(cols, rows, tileSize)` - Scope:**
     *   Stores the grid dimensions (`cols`, `rows`) and the size of each tile (`tileSize`).
     *   Creates a 2D array (`this.grid`) initialized to `false`, representing the occupancy state of each tile.
+    *   Initializes tile patterns for visual variety by calling `initializeTilePatterns()`.
+    *   Creates a 2D array (`this.tileVariations`) to store which pattern is used for each tile.
+    *   Calls `randomizeTileVariations()` to assign patterns to tiles.
+*   **`TileMap.initializeTilePatterns()` - Scope:**
+    *   Creates an array of tile pattern objects that describe visual variations.
+    *   Each pattern specifies features like base color, presence of grass tufts, moss patches, and/or cracks.
+    *   These patterns are used to create visual variety across the map.
+*   **`TileMap.randomizeTileVariations()` - Scope:**
+    *   Assigns a random pattern to each tile in the grid.
+    *   Uses weighted randomization to ensure patterns are distributed naturally (e.g., plain dirt is most common).
+    *   Ensures the map has varied appearance while maintaining visual coherence.
 *   **`TileMap.draw(ctx)` - Scope:**
     *   Calculates canvas center and map pixel dimensions based on `cols`, `rows`, `tileSize`.
     *   Calculates and applies canvas offset for centering.
+    *   Draws a dark background for the entire map area.
+    *   Iterates through the grid, calling `drawTile()` for each tile to create visual variety.
     *   Draws the vertical and horizontal grid lines.
     *   Draws a semi-transparent fill on tiles marked as occupied (`this.grid[y][x] === true`).
     *   Restores canvas context.
+*   **`TileMap.drawTile(ctx, x, y)` - Scope:**
+    *   Draws a single tile at grid position (x, y) using its assigned pattern.
+    *   Applies the base color for the tile.
+    *   Adds random darkening for soil texture variation.
+    *   Conditionally adds grass tufts, moss patches, or cracks based on the tile's assigned pattern.
+    *   Creates visual variety that gives the map an abandoned battlefield appearance.
 *   **`TileMap.isTileOccupied(x, y)` - Scope:**
     *   Checks if the given grid coordinates (`x`, `y`) are within the map boundaries.
     *   Returns `true` if out of bounds or if `this.grid[y][x]` is true, `false` otherwise.
@@ -712,4 +783,61 @@ Represents the playable game area as a grid. Tracks which tiles are occupied by 
     *   If no unoccupied edge tiles are found, returns `null`.
     *   Otherwise, returns a randomly selected tile object `{ x, y }` from the list of unoccupied edge tiles.
         *   Tied to `TileMap.isTileOccupied()`.
-</rewritten_file> 
+
+## `game/audio.js`
+
+Contains the `AudioManager` class, responsible for managing sound effects and background music throughout the game.
+
+### Class `AudioManager` - General Scope
+Handles the loading, playing, and management of all game audio, including sound effects for different tower types, UI interactions, and background music. Includes functionality for volume control and muting.
+
+*   **`AudioManager.constructor()` - Scope:**
+    *   Initializes containers for sound effects (`this.sounds`) and background music (`this.music`).
+    *   Sets initial audio state: `isMuted`, `soundVolume`, and `musicVolume`.
+    *   Calls `init()` to set up all audio resources.
+*   **`AudioManager.init()` - Scope:**
+    *   Creates and initializes different sound effect categories:
+        *   Bullet sounds (cannonShot, sniperShot, mainTowerShot) using different audio files for each tower type.
+        *   UI sounds (upgrade, sell) for interface interactions.
+        *   Game state sounds (waveStart, gameOver) for major game events.
+    *   Sets up background music with looping enabled.
+*   **`AudioManager.createAudio(src, volume)` - Scope:**
+    *   Helper method that creates a new Audio element with the specified source URL and volume.
+    *   Returns the created audio element.
+*   **`AudioManager.playSound(soundName)` - Scope:**
+    *   Plays the specified sound effect if the game is not muted.
+    *   Clones the audio element to allow multiple overlapping instances of the same sound.
+    *   Sets appropriate volume and handles cleanup after playback.
+*   **`AudioManager.startMusic()` - Scope:**
+    *   Starts playing the background music if the game is not muted.
+    *   Catches and logs any errors that occur during playback.
+*   **`AudioManager.stopMusic()` - Scope:**
+    *   Pauses the background music and resets its playback position.
+*   **`AudioManager.toggleMute()` - Scope:**
+    *   Toggles the muted state of all game audio.
+    *   If muting, stops the background music; if unmuting, restarts it.
+    *   Returns the new mute state.
+*   **`AudioManager.setVolume(volume)` - Scope:**
+    *   Sets the volume for all sound effects.
+    *   Updates the volume property of all sound instances.
+*   **`AudioManager.setMusicVolume(volume)` - Scope:**
+    *   Sets the volume specifically for background music.
+*   **`AudioManager.cleanUp()` - Scope:**
+    *   Stops all audio playback.
+    *   Should be called when the game is inactive to prevent audio resource issues.
+
+## Recent Gameplay Changes
+
+The following changes have been made to balance gameplay and improve player experience:
+
+### Defense Adjustments
+- The cost of Walls has been reduced from 25 to 10, making them more accessible for early-game defense.
+- Health values of towers have been significantly increased:
+  - Main Tower health increased to 1000 (previously 500)
+  - All other defensive structures' health increased by 2.5x, improving their durability
+
+### Enemy Adjustments
+- Enemy attack rates have been slowed by a factor of 0.75, giving players more time to react during enemy encounters.
+
+### Audio System Updates
+- The audio system now supports continuous background music that plays in both the main menu and during gameplay, creating a more seamless experience.

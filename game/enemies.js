@@ -28,7 +28,7 @@ class Enemy {
         // Attack properties
         this.isAttacking = false;
         this.attackCooldown = 0;
-        this.attackRate = 0.66; // Attacks per second (approx 1.5 sec cooldown)
+        this.attackRate = 0.66 * 1.33; // Attacks per second (approx 2 sec cooldown now)
         
         // Animation properties
         this.animationState = 'moving'; // 'moving', 'attacking', 'recoiling'
@@ -49,124 +49,155 @@ class Enemy {
         // Update animation state
         this.updateAnimation(deltaTime);
         
-        // Check if we've reached the main tower
-        if (this.hasReachedTarget(mainTower)) {
+        // Find the nearest tower (including MainTower)
+        const nearestTower = this.findNearestTower();
+        
+        // Check if the enemy has reached the target tower
+        if (nearestTower && this.hasReachedTarget(nearestTower)) {
+            // Enemy has reached the target
             if (!this.isAttacking) {
                 this.isAttacking = true;
-                this.attackCooldown = 0; // Attack immediately the first time
             }
             
             // Handle attack cooldown
-            this.attackCooldown -= deltaTime / 1000;
+            this.attackCooldown -= deltaTime;
             
             if (this.attackCooldown <= 0 && this.animationState === 'moving') {
-                // Start attack animation
-                this.startAttackAnimation(mainTower);
-                
                 // Reset attack cooldown
-                this.attackCooldown = 1 / this.attackRate;
-                return true; // Signal that we're dealing damage
+                this.attackCooldown = this.attackRate;
+                
+                // Start attack animation
+                this.startAttackAnimation(nearestTower);
+                
+                // Signal that damage should be dealt
+                return true;
             }
-            
-            return false; // Still attacking but not dealing damage this frame
+        } else {
+            // If the enemy was attacking, reset the state
+            if (this.isAttacking) {
+                this.isAttacking = false;
+            }
         }
         
-        // If no longer in range, stop attacking
-        if (this.isAttacking && !this.hasReachedTarget(mainTower)) {
-            this.isAttacking = false;
-        }
-        
-        // If in animation, don't move
+        // Don't move if in an attack animation
         if (this.animationState !== 'moving') {
             return false;
         }
         
-        // Always set target to main tower tile
-        this.targetX = mainTower.gridX;
-        this.targetY = mainTower.gridY;
-
-        // Decide next grid step
-        let stepX = 0;
-        let stepY = 0;
-
-        const diffX = this.targetX - this.gridX;
-        const diffY = this.targetY - this.gridY;
-
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            stepX = Math.sign(diffX);
-        } else if (diffY !== 0) {
-            stepY = Math.sign(diffY);
-        }
-
-        let nextX = this.gridX + stepX;
-        let nextY = this.gridY + stepY;
-
-        // If desired tile occupied, try alternate axis
-        if (tileMap.isTileOccupied(nextX, nextY)) {
-            // try swapping axes
-            if (stepX !== 0 && !tileMap.isTileOccupied(this.gridX, this.gridY + Math.sign(diffY))) {
-                nextX = this.gridX;
-                nextY = this.gridY + Math.sign(diffY);
-            } else if (stepY !== 0 && !tileMap.isTileOccupied(this.gridX + Math.sign(diffX), this.gridY)) {
-                nextX = this.gridX + Math.sign(diffX);
-                nextY = this.gridY;
+        // Movement logic towards the nearest tower
+        if (nearestTower) {
+            // Set the target position to the tower's grid position
+            this.targetX = nearestTower.gridX + Math.floor(nearestTower.width / 2);
+            this.targetY = nearestTower.gridY + Math.floor(nearestTower.height / 2);
+            
+            // Calculate the next step towards the target (basic pathfinding)
+            const diffX = this.targetX - this.gridX;
+            const diffY = this.targetY - this.gridY;
+            
+            // Determine which direction to move in (prioritize the axis with the larger difference)
+            let stepX = 0;
+            let stepY = 0;
+            
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                stepX = diffX > 0 ? 1 : -1;
             } else {
-                // Try any free neighbor that is closer to target
-                const neighbors = [
-                    {x: this.gridX + 1, y: this.gridY},
-                    {x: this.gridX - 1, y: this.gridY},
-                    {x: this.gridX, y: this.gridY},
-                    {x: this.gridX, y: this.gridY + 1},
-                    {x: this.gridX, y: this.gridY - 1}
-                ];
-                let found = false;
-                for (const n of neighbors) {
-                    if (!tileMap.isTileOccupied(n.x, n.y)) {
-                        nextX = n.x;
-                        nextY = n.y;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    // stuck, don't move this frame
-                    return false;
-                }
-            }
-        }
-
-        // Convert target tile to pixel center
-        const targetPixelX = nextX * this.tileSize + this.tileSize / 2;
-        const targetPixelY = nextY * this.tileSize + this.tileSize / 2;
-
-        // Move towards that pixel
-        const dx = targetPixelX - this.x;
-        const dy = targetPixelY - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance > 0) {
-            const dirX = dx / distance;
-            const dirY = dy / distance;
-            const moveDist = this.speed * (deltaTime / 1000);
-            if (moveDist >= distance) {
-                // Arrive at tile center
-                this.x = targetPixelX;
-                this.y = targetPixelY;
-                this.gridX = nextX;
-                this.gridY = nextY;
-            } else {
-                this.x += dirX * moveDist;
-                this.y += dirY * moveDist;
-                // Update grid based on new pixel pos
-                this.gridX = Math.floor(this.x / this.tileSize);
-                this.gridY = Math.floor(this.y / this.tileSize);
+                stepY = diffY > 0 ? 1 : -1;
             }
             
-            // Update base position for animations
-            this.baseX = this.x;
-            this.baseY = this.y;
+            // Calculate the next position
+            const nextX = this.gridX + stepX;
+            const nextY = this.gridY + stepY;
+            
+            // Check if the next position is valid - use the tileMap parameter passed from game.js
+            if (tileMap.isTileOccupied(nextX, nextY)) {
+                // Try the alternate direction
+                if (stepX !== 0) {
+                    stepX = 0;
+                    stepY = diffY > 0 ? 1 : -1;
+                } else {
+                    stepY = 0;
+                    stepX = diffX > 0 ? 1 : -1;
+                }
+                
+                // Recalculate next position
+                const alternateX = this.gridX + stepX;
+                const alternateY = this.gridY + stepY;
+                
+                // Check if the alternate position is valid
+                if (tileMap.isTileOccupied(alternateX, alternateY)) {
+                    // Both direct paths are blocked, try to find any valid move that gets closer
+                    const possibleMoves = [
+                        { x: this.gridX + 1, y: this.gridY },
+                        { x: this.gridX - 1, y: this.gridY },
+                        { x: this.gridX, y: this.gridY + 1 },
+                        { x: this.gridX, y: this.gridY - 1 }
+                    ];
+                    
+                    // Filter out invalid moves and sort by distance to target
+                    const validMoves = possibleMoves
+                        .filter(move => !tileMap.isTileOccupied(move.x, move.y))
+                        .map(move => {
+                            const dist = Math.sqrt(
+                                Math.pow(move.x - this.targetX, 2) + 
+                                Math.pow(move.y - this.targetY, 2)
+                            );
+                            return { ...move, distance: dist };
+                        })
+                        .sort((a, b) => a.distance - b.distance);
+                    
+                    // If there's a valid move, take it
+                    if (validMoves.length > 0) {
+                        stepX = validMoves[0].x - this.gridX;
+                        stepY = validMoves[0].y - this.gridY;
+                    } else {
+                        // Completely stuck, don't move
+                        return false;
+                    }
+                }
+            }
+            
+            // Convert grid position to pixel position
+            const targetPixelX = (this.gridX + stepX) * this.tileSize + this.tileSize / 2;
+            const targetPixelY = (this.gridY + stepY) * this.tileSize + this.tileSize / 2;
+            
+            // Calculate direction vector
+            const dx = targetPixelX - this.x;
+            const dy = targetPixelY - this.y;
+            
+            // Calculate distance
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance > 0) {
+                // Calculate movement based on speed and delta time - match the original time scaling
+                const moveX = (dx / distance) * this.speed * (deltaTime / 1000);
+                const moveY = (dy / distance) * this.speed * (deltaTime / 1000);
+                
+                // Check if we would overshoot the target
+                if (Math.abs(moveX) > Math.abs(dx) && Math.abs(moveY) > Math.abs(dy)) {
+                    // Snap to the target position
+                    this.x = targetPixelX;
+                    this.y = targetPixelY;
+                    
+                    // Update grid position
+                    this.gridX = Math.floor(this.x / this.tileSize);
+                    this.gridY = Math.floor(this.y / this.tileSize);
+                } else {
+                    // Move towards the target
+                    this.x += moveX;
+                    this.y += moveY;
+                    
+                    // Update grid position
+                    this.gridX = Math.floor(this.x / this.tileSize);
+                    this.gridY = Math.floor(this.y / this.tileSize);
+                }
+                
+                // Update base position for animation
+                this.baseX = this.x;
+                this.baseY = this.y;
+            }
         }
         
-        return false; // Not attacking
+        return false; // Not dealing damage this frame
     }
     
     updateAnimation(deltaTime) {
@@ -335,37 +366,37 @@ class Enemy {
         return this.health <= 0;
     }
     
-    hasReachedTarget(mainTower) {
-        // Calculate distance to main tower center
-        const towerCenterX = (mainTower.gridX + mainTower.width / 2) * this.tileSize;
-        const towerCenterY = (mainTower.gridY + mainTower.height / 2) * this.tileSize;
+    hasReachedTarget(target) {
+        // Calculate center positions
+        const targetCenterX = (target.gridX + target.width / 2) * this.tileSize;
+        const targetCenterY = (target.gridY + target.height / 2) * this.tileSize;
         
-        const dx = towerCenterX - this.x;
-        const dy = towerCenterY - this.y;
+        // Calculate distance between centers
+        const dx = this.x - targetCenterX;
+        const dy = this.y - targetCenterY;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // Define a threshold for reaching the tower (adjust as needed)
-        const reachThreshold = this.tileSize * 1.5; // e.g., 1.5 tiles
+        // Calculate reach threshold based on enemy and target sizes
+        const enemyRadius = this.tileSize / 2;
+        const targetRadius = (Math.max(target.width, target.height) * this.tileSize) / 2;
+        const reachThreshold = enemyRadius + targetRadius + 10; // Extra padding
         
-        return distance < reachThreshold || this.isAdjacentToTower(mainTower);
+        return distance < reachThreshold || this.isAdjacentToDefense(target);
     }
     
-    isAdjacentToTower(tower) {
-        // Check if we're in a tile adjacent to the tower
-        for (let y = 0; y < tower.height; y++) {
-            for (let x = 0; x < tower.width; x++) {
-                const towerTileX = tower.gridX + x;
-                const towerTileY = tower.gridY + y;
+    isAdjacentToDefense(defense) {
+        // Check if we're adjacent to any part of the defense
+        for (let dx = 0; dx < defense.width; dx++) {
+            for (let dy = 0; dy < defense.height; dy++) {
+                const towerTileX = defense.gridX + dx;
+                const towerTileY = defense.gridY + dy;
                 
-                // Check all 8 adjacent tiles
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue; // Skip the tower tile itself
+                // Check all 8 neighboring positions
+                for (let nx = -1; nx <= 1; nx++) {
+                    for (let ny = -1; ny <= 1; ny++) {
+                        if (nx === 0 && ny === 0) continue; // Skip the cell itself
                         
-                        const adjacentX = towerTileX + dx;
-                        const adjacentY = towerTileY + dy;
-                        
-                        if (this.gridX === adjacentX && this.gridY === adjacentY) {
+                        if (this.gridX === towerTileX + nx && this.gridY === towerTileY + ny) {
                             return true;
                         }
                     }
@@ -375,16 +406,81 @@ class Enemy {
         
         return false;
     }
+    
+    findNearestTower() {
+        let nearestTower = null;
+        let shortestDistance = Infinity;
+        
+        // Check MainTower first
+        const mainTower = this.game.mainTower;
+        if (mainTower && mainTower.health > 0) {
+            const mainTowerCenterX = (mainTower.gridX + mainTower.width / 2) * this.tileSize;
+            const mainTowerCenterY = (mainTower.gridY + mainTower.height / 2) * this.tileSize;
+            
+            const distToMain = Math.sqrt(
+                Math.pow(this.x - mainTowerCenterX, 2) + 
+                Math.pow(this.y - mainTowerCenterY, 2)
+            );
+            
+            nearestTower = mainTower;
+            shortestDistance = distToMain;
+        }
+        
+        // Check all other towers
+        if (this.game.towers) {
+            for (const tower of this.game.towers) {
+                if (tower.health <= 0 || tower.isDestroying) continue;
+                
+                const towerCenterX = (tower.gridX + tower.width / 2) * this.tileSize;
+                const towerCenterY = (tower.gridY + tower.height / 2) * this.tileSize;
+                
+                const distance = Math.sqrt(
+                    Math.pow(this.x - towerCenterX, 2) + 
+                    Math.pow(this.y - towerCenterY, 2)
+                );
+                
+                if (distance < shortestDistance) {
+                    nearestTower = tower;
+                    shortestDistance = distance;
+                }
+            }
+        }
+        
+        // Check walls also
+        if (this.game.walls) {
+            for (const wall of this.game.walls) {
+                if (wall.health <= 0 || wall.isDestroying) continue;
+                
+                const wallCenterX = (wall.gridX + wall.width / 2) * this.tileSize;
+                const wallCenterY = (wall.gridY + wall.height / 2) * this.tileSize;
+                
+                const distance = Math.sqrt(
+                    Math.pow(this.x - wallCenterX, 2) + 
+                    Math.pow(this.y - wallCenterY, 2)
+                );
+                
+                if (distance < shortestDistance) {
+                    nearestTower = wall;
+                    shortestDistance = distance;
+                }
+            }
+        }
+        
+        return nearestTower;
+    }
 }
 
 export class Zombie extends Enemy {
     constructor(gridX, gridY, game) {
         super(gridX, gridY, game);
-        this.health = 100;
-        this.maxHealth = 100;
+        this.health = 75;
+        this.maxHealth = 75;
         this.speed = 40;
-        this.damage = 10;
+        this.damage = 7.5;
         this.goldValue = 10;
+        
+        // Slow down attack rate for Zombie (apply the 1.33x multiplier)
+        this.attackRate *= 1.33;
     }
     
     draw(ctx, tileSize) {
@@ -404,18 +500,61 @@ export class Zombie extends Enemy {
         ctx.save();
         ctx.translate(offsetX, offsetY);
         
-        // Draw zombie (green circle)
-        ctx.fillStyle = '#2ecc71';
+        // Draw zombie with improved appearance
+        const radius = tileSize / 2.5;
+        
+        // Body with gradient
+        const gradient = ctx.createRadialGradient(
+            this.x, this.y, radius * 0.2,
+            this.x, this.y, radius
+        );
+        gradient.addColorStop(0, '#4cd137');
+        gradient.addColorStop(1, '#009432');
+        
+        ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, tileSize / 3, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add texture/detail to zombie
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.arc(this.x - radius/3, this.y - radius/3, radius/4, 0, Math.PI * 2);
+        ctx.arc(this.x + radius/2, this.y - radius/4, radius/5, 0, Math.PI * 2);
+        ctx.arc(this.x - radius/2, this.y + radius/3, radius/6, 0, Math.PI * 2);
         ctx.fill();
         
         // Draw eyes
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = '#dfe4ea';
         ctx.beginPath();
-        ctx.arc(this.x - 5, this.y - 5, 3, 0, Math.PI * 2);
-        ctx.arc(this.x + 5, this.y - 5, 3, 0, Math.PI * 2);
+        ctx.arc(this.x - radius/2, this.y - radius/4, radius/4, 0, Math.PI * 2);
+        ctx.arc(this.x + radius/2, this.y - radius/4, radius/4, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Draw pupils - follow movement direction
+        const dirX = Math.sign(this.target ? this.target.x - this.x : 0);
+        const dirY = Math.sign(this.target ? this.target.y - this.y : 0);
+        
+        ctx.fillStyle = '#2f3542';
+        ctx.beginPath();
+        ctx.arc(
+            this.x - radius/2 + dirX * radius/8, 
+            this.y - radius/4 + dirY * radius/8, 
+            radius/8, 0, Math.PI * 2
+        );
+        ctx.arc(
+            this.x + radius/2 + dirX * radius/8, 
+            this.y - radius/4 + dirY * radius/8, 
+            radius/8, 0, Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Draw mouth
+        ctx.strokeStyle = '#2f3542';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y + radius/4, radius/3, 0.1 * Math.PI, 0.9 * Math.PI);
+        ctx.stroke();
         
         ctx.restore();
     }
@@ -429,6 +568,9 @@ export class Runner extends Enemy {
         this.speed = 80;
         this.damage = 5;
         this.goldValue = 15;
+        
+        // Slow down attack rate for Runner (apply the 1.33x multiplier)
+        this.attackRate *= 1.33;
     }
     
     draw(ctx, tileSize) {
@@ -448,14 +590,72 @@ export class Runner extends Enemy {
         ctx.save();
         ctx.translate(offsetX, offsetY);
         
-        // Draw runner (yellow diamond)
-        ctx.fillStyle = '#f1c40f';
+        // Draw runner with improved appearance
+        const size = tileSize / 2;
+        
+        // Create gradient
+        const gradient = ctx.createLinearGradient(
+            this.x - size, this.y - size,
+            this.x + size, this.y + size
+        );
+        gradient.addColorStop(0, '#fbc531');
+        gradient.addColorStop(1, '#e1b12c');
+        
+        // Draw body
+        ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.moveTo(this.x, this.y - tileSize / 3);
-        ctx.lineTo(this.x + tileSize / 3, this.y);
-        ctx.lineTo(this.x, this.y + tileSize / 3);
-        ctx.lineTo(this.x - tileSize / 3, this.y);
+        ctx.moveTo(this.x, this.y - size);
+        ctx.lineTo(this.x + size, this.y);
+        ctx.lineTo(this.x, this.y + size);
+        ctx.lineTo(this.x - size, this.y);
         ctx.closePath();
+        ctx.fill();
+        
+        // Add shadow/highlight
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x, this.y + size);
+        ctx.lineTo(this.x - size, this.y);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Add decoration/details
+        ctx.strokeStyle = '#2f3542';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Draw lightning bolt pattern
+        ctx.moveTo(this.x - size/2, this.y - size/3);
+        ctx.lineTo(this.x, this.y - size/6);
+        ctx.lineTo(this.x - size/3, this.y + size/3);
+        ctx.lineTo(this.x + size/2, this.y);
+        ctx.stroke();
+        
+        // Draw eyes
+        ctx.fillStyle = '#2f3542';
+        ctx.beginPath();
+        // Position eyes based on the direction of movement
+        const dirX = Math.sign(this.target ? this.target.x - this.x : 0);
+        const dirY = Math.sign(this.target ? this.target.y - this.y : 0);
+        
+        const eyeOffsetX = size / 4;
+        const eyeOffsetY = size / 4;
+        
+        // Draw two elliptical eyes that follow movement direction
+        ctx.save();
+        ctx.translate(this.x - eyeOffsetX, this.y - eyeOffsetY);
+        ctx.rotate(Math.atan2(dirY, dirX));
+        ctx.scale(1.5, 1);
+        ctx.arc(0, 0, size/6, 0, Math.PI * 2);
+        ctx.restore();
+        
+        ctx.save();
+        ctx.translate(this.x + eyeOffsetX, this.y - eyeOffsetY);
+        ctx.rotate(Math.atan2(dirY, dirX));
+        ctx.scale(1.5, 1);
+        ctx.arc(0, 0, size/6, 0, Math.PI * 2);
+        ctx.restore();
+        
         ctx.fill();
         
         ctx.restore();
@@ -470,6 +670,9 @@ export class Tank extends Enemy {
         this.speed = 30;
         this.damage = 20;
         this.goldValue = 25;
+        
+        // Slow down attack rate for Tank (apply the 1.33x multiplier)
+        this.attackRate *= 1.33;
     }
     
     draw(ctx, tileSize) {
@@ -489,14 +692,71 @@ export class Tank extends Enemy {
         ctx.save();
         ctx.translate(offsetX, offsetY);
         
-        // Draw tank (purple square)
-        ctx.fillStyle = '#9b59b6';
-        ctx.fillRect(
-            this.x - tileSize / 3,
-            this.y - tileSize / 3,
-            tileSize * 2/3,
-            tileSize * 2/3
+        // Draw tank with improved appearance
+        const size = tileSize / 2;
+        
+        // Create tank body with gradient
+        const gradient = ctx.createLinearGradient(
+            this.x - size, this.y - size,
+            this.x + size, this.y + size
         );
+        gradient.addColorStop(0, '#8e44ad');
+        gradient.addColorStop(1, '#5f27cd');
+        
+        // Main tank body (rounded rectangle)
+        ctx.fillStyle = gradient;
+        const radius = size / 4;
+        ctx.beginPath();
+        ctx.moveTo(this.x - size + radius, this.y - size);
+        ctx.arcTo(this.x + size, this.y - size, this.x + size, this.y - size + radius, radius);
+        ctx.arcTo(this.x + size, this.y + size, this.x + size - radius, this.y + size, radius);
+        ctx.arcTo(this.x - size, this.y + size, this.x - size, this.y + size - radius, radius);
+        ctx.arcTo(this.x - size, this.y - size, this.x - size + radius, this.y - size, radius);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Add tank treads
+        ctx.fillStyle = '#2f3542';
+        // Left tread
+        ctx.fillRect(this.x - size - 2, this.y - size, 4, size * 2);
+        // Right tread
+        ctx.fillRect(this.x + size - 2, this.y - size, 4, size * 2);
+        
+        // Add tread details
+        ctx.strokeStyle = '#dfe4ea';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 5; i++) {
+            // Left tread details
+            ctx.beginPath();
+            ctx.moveTo(this.x - size - 2, this.y - size + i * size/2);
+            ctx.lineTo(this.x - size + 2, this.y - size + i * size/2);
+            ctx.stroke();
+            
+            // Right tread details
+            ctx.beginPath();
+            ctx.moveTo(this.x + size - 2, this.y - size + i * size/2);
+            ctx.lineTo(this.x + size + 2, this.y - size + i * size/2);
+            ctx.stroke();
+        }
+        
+        // Add tank turret
+        ctx.fillStyle = '#6c5ce7';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, size/2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add tank cannon
+        ctx.save();
+        // Point cannon toward target
+        const dirX = this.target ? this.target.x - this.x : 0;
+        const dirY = this.target ? this.target.y - this.y : 0;
+        const angle = Math.atan2(dirY, dirX);
+        
+        ctx.translate(this.x, this.y);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#353b48';
+        ctx.fillRect(0, -size/6, size, size/3);
+        ctx.restore();
         
         ctx.restore();
     }
@@ -510,6 +770,9 @@ export class Boss extends Enemy {
         this.speed = 25;
         this.damage = 50;
         this.goldValue = 100;
+        
+        // Slow down attack rate for Boss (apply the 1.33x multiplier)
+        this.attackRate *= 1.33;
     }
     
     draw(ctx, tileSize) {
@@ -529,35 +792,131 @@ export class Boss extends Enemy {
         ctx.save();
         ctx.translate(offsetX, offsetY);
         
-        // Draw boss (red hexagon)
-        ctx.fillStyle = '#e74c3c';
+        // Draw boss with improved appearance
+        const size = tileSize * 0.75; // Larger size for boss
+        
+        // Draw boss body (hexagon with gradient)
+        const sides = 6;
+        
+        // Create a gradient for the boss body
+        const gradient = ctx.createRadialGradient(
+            this.x, this.y, size * 0.3,
+            this.x, this.y, size
+        );
+        gradient.addColorStop(0, '#e84118');
+        gradient.addColorStop(0.7, '#c23616');
+        gradient.addColorStop(1, '#8B0000');
+        
+        ctx.fillStyle = gradient;
         ctx.beginPath();
         
-        const sides = 6;
-        const size = tileSize / 2;
-        
-        ctx.moveTo(this.x + size * Math.cos(0), this.y + size * Math.sin(0));
-        
-        for (let i = 1; i <= sides; i++) {
-            const angle = i * 2 * Math.PI / sides;
-            ctx.lineTo(this.x + size * Math.cos(angle), this.y + size * Math.sin(angle));
+        // Draw hexagon
+        for (let i = 0; i <= sides; i++) {
+            const angle = i * 2 * Math.PI / sides + Math.PI / 6; // Rotate to point up
+            const x = this.x + size * Math.cos(angle);
+            const y = this.y + size * Math.sin(angle);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         
         ctx.closePath();
         ctx.fill();
         
-        // Draw crown to indicate boss
-        ctx.fillStyle = '#f1c40f';
+        // Add details and patterns
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 3;
+        ctx.stroke(); // Outline the hexagon
+        
+        // Add inner hexagon pattern
         ctx.beginPath();
-        ctx.moveTo(this.x - 10, this.y - 20);
-        ctx.lineTo(this.x - 15, this.y - 30);
-        ctx.lineTo(this.x - 5, this.y - 25);
-        ctx.lineTo(this.x, this.y - 35);
-        ctx.lineTo(this.x + 5, this.y - 25);
-        ctx.lineTo(this.x + 15, this.y - 30);
-        ctx.lineTo(this.x + 10, this.y - 20);
+        for (let i = 0; i <= sides; i++) {
+            const angle = i * 2 * Math.PI / sides + Math.PI / 6;
+            const x = this.x + size * 0.6 * Math.cos(angle);
+            const y = this.y + size * 0.6 * Math.sin(angle);
+            
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.stroke();
+        
+        // Draw crown
+        ctx.fillStyle = '#fbc531';
+        ctx.beginPath();
+        ctx.moveTo(this.x - size * 0.5, this.y - size * 0.7);
+        ctx.lineTo(this.x - size * 0.6, this.y - size * 0.4);
+        ctx.lineTo(this.x - size * 0.3, this.y - size * 0.5);
+        ctx.lineTo(this.x, this.y - size * 0.3);
+        ctx.lineTo(this.x + size * 0.3, this.y - size * 0.5);
+        ctx.lineTo(this.x + size * 0.6, this.y - size * 0.4);
+        ctx.lineTo(this.x + size * 0.5, this.y - size * 0.7);
         ctx.closePath();
         ctx.fill();
+        
+        // Add jewels to crown
+        ctx.fillStyle = '#e74c3c';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y - size * 0.5, size * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#3498db';
+        ctx.beginPath();
+        ctx.arc(this.x - size * 0.3, this.y - size * 0.5, size * 0.08, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = '#2ecc71';
+        ctx.beginPath();
+        ctx.arc(this.x + size * 0.3, this.y - size * 0.5, size * 0.08, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw eyes (menacing)
+        ctx.fillStyle = '#dfe4ea';
+        ctx.beginPath();
+        ctx.arc(this.x - size * 0.25, this.y - size * 0.1, size * 0.15, 0, Math.PI * 2);
+        ctx.arc(this.x + size * 0.25, this.y - size * 0.1, size * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw pupils - follow movement direction
+        const dirX = Math.sign(this.target ? this.target.x - this.x : 0);
+        const dirY = Math.sign(this.target ? this.target.y - this.y : 0);
+        
+        ctx.fillStyle = '#EA2027';
+        ctx.beginPath();
+        ctx.arc(
+            this.x - size * 0.25 + dirX * size * 0.05, 
+            this.y - size * 0.1 + dirY * size * 0.05, 
+            size * 0.07, 0, Math.PI * 2
+        );
+        ctx.arc(
+            this.x + size * 0.25 + dirX * size * 0.05, 
+            this.y - size * 0.1 + dirY * size * 0.05, 
+            size * 0.07, 0, Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Draw mouth (evil grin)
+        ctx.strokeStyle = '#2f3542';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y + size * 0.2, size * 0.3, 0.1 * Math.PI, 0.9 * Math.PI);
+        ctx.stroke();
+        
+        // Draw teeth
+        ctx.fillStyle = '#dfe4ea';
+        for (let i = -3; i <= 3; i += 2) {
+            ctx.beginPath();
+            ctx.moveTo(this.x + i * size * 0.08, this.y + size * 0.2);
+            ctx.lineTo(this.x + (i + 1) * size * 0.08, this.y + size * 0.2);
+            ctx.lineTo(this.x + (i + 0.5) * size * 0.08, this.y + size * 0.35);
+            ctx.fill();
+        }
         
         ctx.restore();
     }
